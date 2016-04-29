@@ -1,20 +1,22 @@
-module Graphics.UI.SDL.Image
+module SDL.Image
     ( InitFlag(..),
       imgInit,
       imgQuit,
       withImgInit,
-      imgLoadTexture
+      imgLoadTexture,
+      imgLoad
     ) where
 
 import Data.Word (Word32)
 import Prelude hiding (init, Enum(..))
-import Graphics.UI.SDL.Utilities (Enum(..), toBitmask)
+import SDL.Utilities (Enum(..), toBitmask)
 import Control.Monad (when)
 import Data.Maybe (fromMaybe)
 import Foreign.C (withCString, peekCString, CString)
-import Foreign.Ptr (nullPtr)
+import Foreign.Ptr (nullPtr, Ptr)
 import Control.Exception (bracket_)
-import Graphics.UI.SDL (Renderer, Texture)
+import SDL (Renderer(..), Texture(..), Surface(..))
+import qualified SDL.Raw as Raw
 
 #include "SDL_image.h"
 
@@ -37,15 +39,15 @@ instance Enum InitFlag Word32 where
     toEnum #{const IMG_INIT_PNG} = InitPNG
     toEnum #{const IMG_INIT_TIF} = InitTIF
     toEnum #{const IMG_INIT_WEBP} = InitWEBP
-    toEnum _ = error "Graphics.UI.SDL.General.toEnum: bad argument"
+    toEnum _ = error "SDL.General.toEnum: bad argument"
     succ InitJPG = InitPNG
     succ InitPNG = InitTIF
     succ InitTIF = InitWEBP
-    succ _ = error "Graphics.UI.SDL.General.succ: bad argument"
+    succ _ = error "SDL.General.succ: bad argument"
     pred InitPNG = InitJPG
     pred InitTIF = InitPNG
     pred InitWEBP = InitTIF
-    pred _ = error "Graphics.UI.SDL.General.pred: bad argument"
+    pred _ = error "SDL.General.pred: bad argument"
     enumFromTo x y | x > y = []
                      | x == y = [y]
                      | True = x : enumFromTo (succ x) y
@@ -68,16 +70,28 @@ imgQuit = _imgQuit
 foreign import ccall unsafe "IMG_Quit" _imgQuit :: IO ()
 
 
+-- | Load image file to a surface.
+imgLoad :: FilePath -> IO (Either String Surface)
+imgLoad file
+    = withCString file $ \cFile -> do
+        surface <- _imgLoad cFile
+        err <- getError
+        if surface == nullPtr
+            then return (Left (fromMaybe "IMG_Load(): Unknown error!" err))
+            else return (Right $ Surface surface Nothing)
+foreign import ccall unsafe "IMG_Load" _imgLoad :: CString -> IO (Ptr Raw.Surface)
+
+
 -- | Load image file to a texture.
-imgLoadTexture :: Renderer -> String -> IO (Either String Texture)
-imgLoadTexture rend file
+imgLoadTexture :: Renderer -> FilePath -> IO (Either String Texture)
+imgLoadTexture (Renderer rend) file
     = withCString file $ \cFile -> do
         tex <- _imgLoadTexture rend cFile
         err <- getError
         if tex == nullPtr
-            then return (Left (fromMaybe "IMG_LoadTexture(): Unknown error!" err))
-            else return (Right tex)
-foreign import ccall unsafe "IMG_LoadTexture" _imgLoadTexture :: Renderer -> CString -> IO Texture
+            then return (Left $ fromMaybe "IMG_LoadTexture(): Unknown error!" err)
+            else return (Right $ Texture tex)
+foreign import ccall unsafe "IMG_LoadTexture" _imgLoadTexture :: Raw.Renderer -> CString -> IO Raw.Texture
 
 
 -- | Returns a string containing the last error. Nothing if no error.
